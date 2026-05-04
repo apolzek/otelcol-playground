@@ -1,0 +1,76 @@
+extensions:
+  oidc:
+    issuer_url: http://oidc-provider:9000
+    audience:   otel-collector
+    # claim que carrega a identidade lógica do tenant — exposto via context para processors
+    username_claim: sub
+    groups_claim:   tenant_id
+
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+        auth: { authenticator: oidc }
+      http:
+        endpoint: 0.0.0.0:4318
+        auth: { authenticator: oidc }
+        cors: { allowed_origins: [] }
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # Enriquece todo span/metric/log com o tenant_id derivado do JWT
+  # (a extension expõe via auth.context — um processor custom poderia copiar
+  # para resource attributes; aqui usamos o transform processor com OTTL)
+  transform/tenant:
+    error_mode: ignore
+    trace_statements:
+      - context: resource
+        statements:
+          - set(attributes["tenant.id"], "from-jwt")  # placeholder; ver doc
+    metric_statements:
+      - context: resource
+        statements:
+          - set(attributes["tenant.id"], "from-jwt")
+    log_statements:
+      - context: resource
+        statements:
+          - set(attributes["tenant.id"], "from-jwt")
+
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  debug: { verbosity: basic }
+
+service:
+  extensions: [oidc, health_check]
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - pull:
+            exporter:
+              prometheus: { host: 0.0.0.0, port: 8888 }
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, transform/tenant, batch]
+      exporters:  [debug]
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, transform/tenant, batch]
+      exporters:  [debug]
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, transform/tenant, batch]
+      exporters:  [debug]

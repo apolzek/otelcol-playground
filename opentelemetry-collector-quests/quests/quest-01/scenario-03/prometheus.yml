@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: otel-l1
+    static_configs:
+      - targets: ["otel-l1:8888"]
+        labels:
+          collector: l1
+
+  - job_name: otel-l2
+    static_configs:
+      - targets: ["otel-l2:8888"]
+        labels:
+          collector: l2
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]

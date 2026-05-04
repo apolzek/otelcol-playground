@@ -1,0 +1,113 @@
+services:
+  otel-l1:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    container_name: otel-l1
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-l1.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP (entrada)
+      - "8888:8888"   # metrics próprias
+    depends_on:
+      - otel-l2
+    cpus: 2
+    mem_limit: 2g
+    restart: unless-stopped
+
+  otel-l2:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    container_name: otel-l2
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-l2.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "5318:4318"   # OTLP HTTP (entrada vinda do L1, exposto no host só p/ debug)
+      - "8889:8888"   # metrics próprias
+    cpus: 2
+    mem_limit: 2g
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    ports:
+      - "9091:8080"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - cadvisor
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  telemetrygen:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:v0.151.0
+    container_name: telemetrygen
+    profiles: ["run"]
+    depends_on:
+      - otel-l1
+    command:
+      - "traces"
+      - "--otlp-endpoint=otel-l1:4318"
+      - "--otlp-http"
+      - "--otlp-insecure"
+      - "--duration=${DURATION:-5m}"
+      - "--workers=${WORKERS:-2}"
+      - "--rate=${RATE:-1000}"
+      - "--telemetry-attributes=attr01=\"v01\""
+      - "--telemetry-attributes=attr02=\"v02\""
+      - "--telemetry-attributes=attr03=\"v03\""
+      - "--telemetry-attributes=attr04=\"v04\""
+      - "--telemetry-attributes=attr05=\"v05\""
+      - "--telemetry-attributes=attr06=\"v06\""
+      - "--telemetry-attributes=attr07=\"v07\""
+      - "--telemetry-attributes=attr08=\"v08\""
+      - "--telemetry-attributes=attr09=\"v09\""
+      - "--telemetry-attributes=attr10=\"v10\""
+      - "--telemetry-attributes=attr11=\"v11\""
+      - "--telemetry-attributes=attr12=\"v12\""
+      - "--telemetry-attributes=attr13=\"v13\""
+      - "--telemetry-attributes=attr14=\"v14\""
+      - "--telemetry-attributes=attr15=\"v15\""
+      - "--telemetry-attributes=attr16=\"v16\""
+      - "--telemetry-attributes=attr17=\"v17\""
+      - "--telemetry-attributes=attr18=\"v18\""
+      - "--telemetry-attributes=attr19=\"v19\""
+      - "--telemetry-attributes=attr20=\"v20\""
+
+volumes:
+  grafana-data:

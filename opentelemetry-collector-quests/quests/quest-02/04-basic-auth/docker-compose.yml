@@ -1,0 +1,37 @@
+services:
+  user-api:
+    build: ./user-api
+    container_name: user-api
+    environment:
+      ADMIN_KEY:    ${ADMIN_KEY:-change-me-admin-key}
+      LISTEN:       ":8081"
+      HTPASSWD:     /etc/otelcol/htpasswd
+      DB_PATH:      /data/users.db
+      COLLECTOR_BIN: otelcol-contrib
+    volumes:
+      - ./htpasswd:/etc/otelcol/htpasswd
+      - api-data:/data
+    ports: ["8081:8081"]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    container_name: otelcol
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - ./htpasswd:/etc/otelcol/htpasswd:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8888:8888"
+    pid: "service:user-api"
+    depends_on: [user-api]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1Gi" }
+
+volumes:
+  api-data:

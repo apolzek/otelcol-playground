@@ -1,0 +1,329 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    networks:
+      - otel-flink-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
+      KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024m
+    networks:
+      - otel-flink-network
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Creating Kafka topics...'
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic otlp-traces   --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic otlp-logs     --partitions 3 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic otlp-metrics  --partitions 3 --replication-factor 1
+      echo 'Topics created:'
+      kafka-topics --bootstrap-server kafka:29092 --list
+      echo 'Done!'
+      "
+    networks:
+      - otel-flink-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 512m
+    networks:
+      - otel-flink-network
+
+  collector-l1:
+    image: otel/opentelemetry-collector-contrib:0.147.0
+    container_name: collector-l1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./config/collector-l1-config.yaml:/etc/otelcol-contrib/config.yaml
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024m
+    network_mode: host
+
+  collector-l2:
+    image: otel/opentelemetry-collector-contrib:0.147.0
+    container_name: collector-l2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./config/collector-l2-config.yaml:/etc/otelcol-contrib/config.yaml
+      - ./data:/data
+    ports:
+      - "24133:13133"  # hc
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    networks:
+      - otel-flink-network
+
+  flink-jobmanager:
+    image: flink:1.20.1-scala_2.12-java11
+    container_name: flink-jobmanager
+    ports:
+      - "8082:8081"  # Flink Web UI
+      - "6123:6123"  # RPC
+      - "9249:9249"  # Prometheus metrics
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 2048m
+        state.backend: hashmap
+        heartbeat.interval: 1000
+        heartbeat.timeout: 5000
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    volumes:
+      - ./flink-jobs:/opt/flink/jobs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2048m
+    networks:
+      - otel-flink-network
+
+  flink-job-submitter:
+    image: curlimages/curl:8.5.0
+    container_name: flink-job-submitter
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./flink-jobs:/jobs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for jar in /jobs/*.jar; do
+          echo "[submitter] uploading: $$jar"
+          response=$$(curl -sf -X POST http://flink-jobmanager:8081/jars/upload -H 'Expect:' -F "jarfile=@$$jar")
+          if [ $$? -ne 0 ]; then echo "[submitter] upload failed: $$jar"; continue; fi
+          jar_id=$$(echo "$$response" | grep -o '"filename":"[^"]*"' | sed 's/.*\///' | sed 's/"//')
+          echo "[submitter] submitting: $$jar_id"
+          curl -sf -X POST "http://flink-jobmanager:8081/jars/$$jar_id/run" \
+            -H "Content-Type: application/json" \
+            -d '{"parallelism": 2}' \
+            && echo "[submitter] ok: $$jar" \
+            || echo "[submitter] submit failed: $$jar"
+        done
+    restart: "no"
+    networks:
+      - otel-flink-network
+
+  flink-taskmanager:
+    image: flink:1.20.1-scala_2.12-java11
+    container_name: flink-taskmanager
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    command: taskmanager
+    ports:
+      - "9250:9249"  # Prometheus metrics (offset to avoid conflict with jobmanager)
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 6
+        taskmanager.memory.process.size: 1024m
+        state.backend: hashmap
+        heartbeat.interval: 1000
+        heartbeat.timeout: 5000
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    volumes:
+      - ./flink-jobs:/opt/flink/jobs
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024m
+    networks:
+      - otel-flink-network
+
+  cadvisor:
+    image: ghcr.io/google/cadvisor@sha256:5534ae91cbf3428998d60428d107cfdd97272d80658534ac6e54d8ce3b0c4d72
+    container_name: cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 512m
+    networks:
+      - otel-flink-network
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: kafka-exporter
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - --kafka.server=kafka:29092
+    ports:
+      - "9308:9308"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 256m
+    networks:
+      - otel-flink-network
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=1h'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    networks:
+      - otel-flink-network
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DATASOURCES_DEFAULT_TYPE: prometheus
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 256m
+    networks:
+      - otel-flink-network
+
+networks:
+  otel-flink-network:
+    driver: bridge
+
+volumes:
+  grafana-data: {}

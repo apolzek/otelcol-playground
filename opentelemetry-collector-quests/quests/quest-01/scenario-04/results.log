@@ -1,0 +1,18 @@
+====================================================
+scenario-04 — gRPC l1 -> gRPC l2 (com batch)
+  start:      2026-04-30T13:25:49Z
+  duration:   316s (alvo 5m)
+  workers:    2
+  attributes: 20
+
+  container              rx              tx
+  otel-l1            689MiB           48MiB
+  otel-l2             34MiB          724KiB
+
+  Bytes l1 -> l2 (gRPC) ≈ otel-l2.rx = 34MiB  (= 35428408 B)
+
+  spans recebidos no l1:  600400
+  spans enviados pelo l1: 600400
+  spans recebidos no l2:  600400
+====================================================
+

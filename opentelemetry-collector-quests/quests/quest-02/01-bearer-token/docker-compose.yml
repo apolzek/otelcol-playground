@@ -1,0 +1,49 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    container_name: otelcol
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - tokens-vol:/etc/otelcol/tokens:ro
+      # tokens.yaml mora em volume compartilhado com a API
+    configs:
+      - source: tokens
+        target: /etc/otelcol/tokens.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "13133:13133" # health
+      - "8888:8888"   # collector own metrics
+    # Compartilha PID namespace com a API para que ela possa enviar SIGHUP
+    pid: "service:token-api"
+    depends_on: [token-api]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1Gi" }
+
+  token-api:
+    build: ./token-api
+    container_name: token-api
+    environment:
+      ADMIN_KEY: ${ADMIN_KEY:-change-me-admin-key}
+      DB_PATH:   /data/tokens.db
+      TOKENS_FILE: /etc/otelcol/tokens.yaml
+      LISTEN:    ":8080"
+      # PID do collector dentro do shared namespace
+      COLLECTOR_BIN: otelcol-contrib
+    volumes:
+      - api-data:/data
+      - ./tokens.yaml:/etc/otelcol/tokens.yaml
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+configs:
+  tokens:
+    file: ./tokens.yaml
+
+volumes:
+  tokens-vol:
+  api-data:

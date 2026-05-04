@@ -1,0 +1,3 @@
+# Arquivo gerenciado pela token-api. Não editar manualmente.
+# Schema: { tokens: [string, string, ...] }
+tokens: []

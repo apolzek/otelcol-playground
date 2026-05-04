@@ -1,0 +1,36 @@
+services:
+  oidc-provider:
+    build: ./oidc-provider
+    container_name: oidc-provider
+    environment:
+      ADMIN_KEY: ${ADMIN_KEY:-change-me-admin-key}
+      ISSUER:    http://oidc-provider:9000
+      AUDIENCE:  otel-collector
+      LISTEN:    ":9000"
+      KEY_PATH:  /data/signing.pem
+      DB_PATH:   /data/clients.db
+      TOKEN_TTL_SECONDS: "900"
+    volumes:
+      - oidc-data:/data
+    ports: ["9000:9000"]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.151.0
+    container_name: otelcol
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8888:8888"
+    depends_on: [oidc-provider]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1Gi" }
+
+volumes:
+  oidc-data:

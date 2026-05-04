@@ -1,0 +1,18 @@
+====================================================
+scenario-08 — HTTP l1 -> HTTP l2 (macro-batch: send_batch_size=8192)
+  start:      2026-04-30T13:46:26Z
+  duration:   322s (alvo 5m)
+  workers:    2
+  attributes: 20
+
+  container              rx              tx
+  otel-l1            686MiB           43MiB
+  otel-l2             32MiB          288KiB
+
+  Bytes l1 -> l2 (HTTP) ≈ otel-l2.rx = 32MiB  (= 33438599 B)
+
+  spans recebidos no l1:  600400
+  spans enviados pelo l1: 600400
+  spans recebidos no l2:  600400
+====================================================
+

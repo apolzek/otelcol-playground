@@ -1,0 +1,80 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 200
+    send_batch_max_size: 400
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1024
+    spike_limit_mib: 256
+
+exporters:
+  kafka/traces:
+    protocol_version: 2.6.0
+    brokers: [localhost:9092]
+    topic: otlp-traces
+    encoding: otlp_proto
+    producer:
+      compression: zstd
+      max_message_bytes: 10485760
+
+  kafka/logs:
+    protocol_version: 2.6.0
+    brokers: [localhost:9092]
+    topic: otlp-logs
+    encoding: otlp_proto
+    producer:
+      compression: zstd
+      max_message_bytes: 10485760
+
+  kafka/metrics:
+    protocol_version: 2.6.0
+    brokers: [localhost:9092]
+    topic: otlp-metrics
+    encoding: otlp_proto
+    producer:
+      compression: zstd
+      max_message_bytes: 10485760
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [kafka/traces]
+
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [kafka/logs]
+
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch]
+      exporters:  [kafka/metrics]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888

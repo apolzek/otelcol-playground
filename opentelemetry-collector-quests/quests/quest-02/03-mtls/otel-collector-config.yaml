@@ -1,0 +1,59 @@
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+        tls:
+          cert_file:      /etc/otelcol/tls/server.crt
+          key_file:       /etc/otelcol/tls/server.key
+          client_ca_file: /etc/otelcol/tls/ca.crt
+          # reload do CA periódico — permite que ca-service publique nova CA sem restart
+          reload_interval: 1h
+          # impede TLS 1.0/1.1
+          min_version: "1.3"
+      http:
+        endpoint: 0.0.0.0:4318
+        cors: { allowed_origins: [] }
+        tls:
+          cert_file:      /etc/otelcol/tls/server.crt
+          key_file:       /etc/otelcol/tls/server.key
+          client_ca_file: /etc/otelcol/tls/ca.crt
+          reload_interval: 1h
+          min_version: "1.3"
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  debug: { verbosity: basic }
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - pull: { exporter: { prometheus: { host: 0.0.0.0, port: 8888 } } }
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
