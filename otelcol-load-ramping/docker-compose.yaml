@@ -1,0 +1,75 @@
+name: otelcol-load-ramping
+
+services:
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.154.0
+    container_name: otelcol-load-collector
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    volumes:
+      - ./collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # collector internal metrics (Prometheus)
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "components"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    # `docker compose watch` restarts the collector when its config changes.
+    develop:
+      watch:
+        - path: ./collector/config.yaml
+          action: restart
+
+  # ---- backend: Go control API (no UI) ----
+  backend:
+    image: otelcol-load-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        TELEMETRYGEN_VERSION: v0.154.0
+    container_name: otelcol-load-backend
+    depends_on:
+      - otelcol
+    environment:
+      # initial metrics endpoint (host:port or full URL); editable live in the UI
+      COLLECTOR_METRICS_URL: otelcol:8888
+      TELEMETRYGEN_BIN: /usr/local/bin/telemetrygen
+      LISTEN_ADDR: ":8080"
+    expose:
+      - "8080"
+    # Any change to the Go source rebuilds the backend image and recreates it.
+    develop:
+      watch:
+        - path: ./backend
+          action: rebuild
+
+  # ---- frontend: static UI + reverse proxy (nginx) ----
+  frontend:
+    image: otelcol-load-frontend
+    build:
+      context: ./frontend
+    container_name: otelcol-load-ui
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"     # web UI -> http://localhost:8080
+    # Static assets sync straight into the container (instant, no rebuild);
+    # nginx config / Dockerfile changes trigger a rebuild.
+    develop:
+      watch:
+        - path: ./frontend/index.html
+          action: sync
+          target: /usr/share/nginx/html/index.html
+        - path: ./frontend/app.js
+          action: sync
+          target: /usr/share/nginx/html/app.js
+        - path: ./frontend/style.css
+          action: sync
+          target: /usr/share/nginx/html/style.css
+        - path: ./frontend/nginx.conf
+          action: rebuild
+        - path: ./frontend/Dockerfile
+          action: rebuild

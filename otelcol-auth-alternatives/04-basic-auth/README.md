@@ -1,71 +1,38 @@
-# 04 — Basic Auth (htpasswd) com API Go de provisionamento
+# 04 — Basic Auth (htpasswd)
 
-## Ideia
+Collector valida `Authorization: Basic <base64(user:pass)>` contra um arquivo `htpasswd` (bcrypt) via extensão [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension). Uma **API Go** faz CRUD de usuários, regrava o `htpasswd` e sinaliza o collector. Cada credencial tem identidade legível (o `user`).
 
-A extensão [`basicauth`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension) do collector-contrib valida `Authorization: Basic <base64(user:pass)>` contra um arquivo `htpasswd` (formato Apache, hashes bcrypt/sha/crypt). Múltiplos usuários no mesmo arquivo, nativamente.
+```mermaid
+flowchart LR
+  C[Cliente OTLP] -->|Basic user:pass| K[otel-collector<br/>basicauth]
+  K -->|válido| P[pipeline → debug]
+  K -.->|inválido / ausente| X[401]
+  A[user-api Go] -->|regrava htpasswd<br/>+ SIGHUP| K
+  A --> DB[(SQLite<br/>bcrypt cost 12)]
+```
 
-A pasta inclui uma **API Go** (`user-api/`) que gerencia o `htpasswd`:
-- `POST /users` — cria usuário (gera senha aleatória, devolve uma vez).
-- `DELETE /users/{name}` — remove.
-- `POST /users/{name}/rotate` — gera nova senha.
-- A cada mutação, regrava `htpasswd` atomicamente e envia `SIGHUP` ao collector.
+## Rodar
 
-Bcrypt é usado por padrão (cost 12). O arquivo segue o formato esperado pela extension.
+```bash
+docker compose up --build -d
 
-## Por que essa abordagem
+# cria usuário (senha aparece uma vez)
+curl -sX POST localhost:8081/users -H 'X-Admin-Key: change-me-admin-key' \
+  -H 'Content-Type: application/json' -d '{"name":"app-a","ttl_hours":720}'
+# -> { "name":"app-a", "password":"..." }
 
-- **Zero dependência exótica**: clientes HTTP da terra inteira sabem fazer Basic Auth. Excelente para integrar sistemas legados que não falam JWT/OIDC.
-- **Multi-usuário nativo**: um único arquivo, várias identidades. Diferente da abordagem 1 (bearer com `tokens` list), aqui cada credencial tem **identidade legível** (`user`).
-- **Mais simples que OIDC, mais identificável que bearer puro**: ideal quando você precisa saber "quem mandou" sem montar OIDC.
+# envia telemetria
+curl -i localhost:4318/v1/traces -u "app-a:$PASSWORD" \
+  -H 'Content-Type: application/json' -d '{"resourceSpans":[]}'
+
+docker compose down -v
+```
+
+Sem creds → `401`. Senha errada → `401`. Creds válidas → `200`.
 
 ## Trade-offs
 
-- Cada request paga **um bcrypt verify** — esse é caro de propósito (~50–100ms a cost 12). Resultado: throughput por core fica em ~10–20 req/s **se não houver cache**. **A `basicauth` faz cache em memória dos pares user/pass aprovados**, então só a primeira requisição de cada par paga o custo. Para SDKs OpenTelemetry com long-lived connections, isso é ótimo. Para clientes que abrem conexão nova a cada request, é fatal — diminua o cost para 8 ou troque para `argon2id` se a extension permitir, ou mude para abordagem 1/2.
-- Basic Auth manda credencial em todo request (mesmo cifrado por TLS) — vazamento de TLS = vazamento de senhas reusáveis. Mitigação: TTL curto, rotação frequente.
-- Não há expiração nativa por entrada — a API Go enforça TTL via remoção programada.
-
-## Layout
-
-```
-04-basic-auth/
-├── docker-compose.yml
-├── otel-collector-config.yaml
-├── htpasswd               (vazio inicialmente; gerenciado pela API)
-└── user-api/
-    ├── go.mod
-    ├── main.go
-    └── Dockerfile
-```
-
-## Como rodar
-
-```bash
-docker compose up --build
-
-# Cria usuário:
-curl -X POST http://localhost:8081/users \
-  -H 'X-Admin-Key: change-me-admin-key' \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"app-a","ttl_hours":720}'
-# Resposta: { "name":"app-a", "password":"...", "expires_at":"..." }
-
-# Manda telemetria:
-curl http://localhost:4318/v1/traces \
-  -u "app-a:<password>" \
-  -H 'Content-Type: application/json' \
-  -d '{"resourceSpans":[]}'
-```
-
-## Segurança
-
-- bcrypt cost 12 (default da `bcrypt` do Go). Suficiente para 2026.
-- Senhas geradas com 32 bytes random hex — não dá para brute-force.
-- API Go exige `X-Admin-Key` (TLS obrigatório no fronting).
-- O `htpasswd` mora em volume compartilhado **read-only** para o collector e read-write para a API. Permissão `0600`.
-- Em K8s: secret separado para o htpasswd, mounted no collector. Use `reloader` ou a extension `file_storage` com watch.
-
-## Performance
-
-- Primeira requisição de um par user/pass: ~50ms (bcrypt). Subsequentes (cache da extension): <100ns.
-- Cache da `basicauth` é por-processo — múltiplas réplicas re-pagam o custo da primeira request cada uma. Use `consistent hash` no LB (anotação no Service / NLB target group attributes) para grudar cliente em pod.
-- Para volumes muito altos, considere mover do bcrypt para SHA-256 com salt longo (menos seguro contra brute-force offline mas igual contra brute-force online — TLS + rate-limit cobre o resto).
+- **Zero dependência exótica**: qualquer cliente HTTP fala Basic Auth; ótimo p/ legado.
+- **bcrypt é caro** (~50-100ms/verify, cost 12) — a `basicauth` faz cache por par user/pass aprovado, então só a 1ª request paga. Conexões long-lived dos SDKs OTel se beneficiam; clientes que reabrem conexão a cada request sofrem.
+- Credencial reutilizável trafega em todo request (sob TLS) — TTL curto + rotação frequente.
+- Reload via SIGHUP (restart); collector roda como UID `65532` p/ ler o `htpasswd` `0600` do volume compartilhado.

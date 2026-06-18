@@ -1,15 +1,17 @@
 # Expondo o OTel Collector publicamente em Kubernetes
 
-Discussão das opções de exposição do collector público (`v0.151.0`) na internet, comparando segurança, performance, custo e operação. Cada abordagem assume que **a autenticação na camada do collector já está resolvida** (ver as 5 pastas deste repositório); o foco aqui é como o tráfego chega até o pod.
+Discussão das opções de exposição do collector público (`v0.154.0`) na internet, comparando segurança, performance, custo e operação. Cada abordagem assume que **a autenticação na camada do collector já está resolvida** (ver as 5 pastas deste repositório); o foco aqui é como o tráfego chega até o pod.
 
 ---
 
 ## Topologia geral
 
-```
-[Cliente OTLP] --(internet)--> [Camada de exposição] --(cluster network)--> [Service ClusterIP] -> [Pod OTel Collector]
-                                                                                   |
-                                                                            [Auth extension] (bearer/oidc/mtls/basic/hmac)
+```mermaid
+flowchart LR
+  C[Cliente OTLP] -->|internet| E[Camada de exposição]
+  E -->|cluster network| S[Service ClusterIP]
+  S --> P[Pod OTel Collector]
+  P --> Auth[Auth extension<br/>bearer / oidc / mtls / basic / hmac]
 ```
 
 A "camada de exposição" é onde mora a decisão. Abaixo, 5 possibilidades.

@@ -1,9 +1,9 @@
 extensions:
   bearertokenauth:
     scheme: "Bearer"
-    # 'tokens' é uma lista de tokens válidos. A API Go regrava este arquivo
-    # quando há mutação e envia SIGHUP para o collector.
-    tokens: ${file:/etc/otelcol/tokens.yaml:tokens}
+    # Lista de tokens válidos (lista YAML pura). A token-api regrava este arquivo
+    # a cada mutação e envia SIGHUP ao collector, que recarrega via restart.
+    tokens: ${file:/etc/otelcol/tokens/tokens.yaml}
 
   health_check:
     endpoint: 0.0.0.0:13133

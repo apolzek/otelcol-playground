@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  # The debug exporter just counts/prints what arrives. Swap for a real
+  # backend (otlp, prometheus, etc.) if you want to inspect the payloads.
+  debug:
+    verbosity: basic
+    sampling_initial: 1
+    sampling_thereafter: 10000
+
+service:
+  telemetry:
+    # Expose the collector's own internal metrics in Prometheus format on
+    # :8888. The loadgen backend scrapes this endpoint to report the *real*
+    # (server-side measured) throughput, not just what telemetrygen attempts.
+    metrics:
+      level: detailed
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

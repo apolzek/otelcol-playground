@@ -23,5 +23,7 @@ EOF
 openssl x509 -req -in tls/server.csr -CA tls/ca.crt -CAkey tls/ca.key \
   -CAcreateserial -days 825 -extfile tls/server.ext -out tls/server.crt
 
-chmod 600 tls/*.key
+# dev-only: os containers rodam como nonroot e leem estas chaves via bind-mount.
+# Em produção use Secrets/Vault e nunca afrouxe a permissão da chave da CA.
+chmod 644 tls/*.key
 echo "tls/ contém ca.crt, ca.key, server.crt, server.key"

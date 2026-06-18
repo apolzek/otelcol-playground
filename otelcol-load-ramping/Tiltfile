@@ -1,0 +1,66 @@
+# Tiltfile — Otelcol Load Ramping
+#
+# Runs the collector + backend + frontend as three independent, live-reloading
+# resources on top of docker-compose. Frontend and backend are fully separated:
+#
+#   • backend  — Go control API. Compiled on the host for speed; the fresh
+#                binary is synced into the container (no image rebuild on edits).
+#   • frontend — static UI served by nginx (which reverse-proxies /api to the
+#                backend). HTML/CSS/JS edits are synced live, instantly.
+#
+# Usage:  tilt up      (then press space for the web UI)
+#         tilt down
+
+docker_compose('docker-compose.yaml')
+
+# ----------------------------- backend (Go API) -----------------------------
+# Compile on the host. GOARCH defaults to the host arch, which matches the
+# Docker Desktop container arch, so the static binary runs as-is in Alpine.
+local_resource(
+    'backend-compile',
+    cmd='cd backend && CGO_ENABLED=0 GOOS=linux go build -trimpath -o build/loadgen .',
+    deps=[
+        'backend/main.go',
+        'backend/config.go',
+        'backend/manager.go',
+        'backend/stats.go',
+        'backend/go.mod',
+    ],
+    labels=['backend'],
+)
+
+# Image just carries telemetrygen + the host-built binary. Editing Go code
+# recompiles on the host, then live_update syncs the binary and restarts.
+docker_build(
+    'otelcol-load-backend',
+    context='./backend',
+    dockerfile='./backend/Dockerfile.dev',
+    only=['build/loadgen'],
+    live_update=[
+        sync('./backend/build/loadgen', '/usr/local/bin/loadgen'),
+        restart_container(),
+    ],
+)
+
+# --------------------------- frontend (nginx + UI) --------------------------
+# Static assets are synced into nginx's web root with zero rebuild. Changing
+# nginx.conf or the Dockerfile falls back to a normal image rebuild.
+docker_build(
+    'otelcol-load-frontend',
+    context='./frontend',
+    live_update=[
+        sync('./frontend/index.html', '/usr/share/nginx/html/index.html'),
+        sync('./frontend/app.js', '/usr/share/nginx/html/app.js'),
+        sync('./frontend/style.css', '/usr/share/nginx/html/style.css'),
+    ],
+)
+
+# ------------------------------- wiring -------------------------------------
+dc_resource('otelcol', labels=['collector'])
+dc_resource('backend', labels=['backend'], resource_deps=['backend-compile'])
+dc_resource(
+    'frontend',
+    labels=['frontend'],
+    resource_deps=['backend'],
+    links=[link('http://localhost:8080', 'Otelcol Load Ramping UI')],
+)

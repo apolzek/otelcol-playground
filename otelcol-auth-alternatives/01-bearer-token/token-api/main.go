@@ -42,6 +42,7 @@ type Server struct {
 	tokensFile  string
 	adminKey    string
 	collectorPID func() int
+	bootstrap   string // sentinela aleatório p/ o collector subir quando não há tokens ativos
 	mu          sync.Mutex
 }
 
@@ -79,6 +80,7 @@ func main() {
 		tokensFile: cfg.TokensFile,
 		adminKey:   cfg.AdminKey,
 		collectorPID: func() int { return findPID(cfg.Collector) },
+		bootstrap:  newToken(), // descartado: ninguém recebe; só evita lista vazia
 	}
 
 	// Regrava tokens.yaml ao iniciar (mantém collector e DB em sync)
@@ -127,6 +129,7 @@ func initSchema(db *sql.DB) error {
 			email       TEXT NOT NULL,
 			token_hash  TEXT NOT NULL,
 			token_short TEXT NOT NULL,        -- prefixo + sha256 hex truncado, para listar
+			token_plain TEXT NOT NULL,        -- plaintext lido pelo collector (volume privado 0600)
 			created_at  DATETIME NOT NULL,
 			expires_at  DATETIME NOT NULL,
 			revoked     INTEGER NOT NULL DEFAULT 0
@@ -172,9 +175,9 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	exp := now.Add(time.Duration(req.TTLHours) * time.Hour)
 
 	_, err = s.db.ExecContext(r.Context(), `
-		INSERT INTO tenants(id, name, email, token_hash, token_short, created_at, expires_at, revoked)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-	`, id, req.Name, req.Email, string(hash), shortToken(plain), now, exp)
+		INSERT INTO tenants(id, name, email, token_hash, token_short, token_plain, created_at, expires_at, revoked)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+	`, id, req.Name, req.Email, string(hash), shortToken(plain), plain, now, exp)
 	if err != nil { http.Error(w, "db: "+err.Error(), http.StatusInternalServerError); return }
 
 	if err := s.writeTokensFile(r.Context()); err != nil {
@@ -223,8 +226,8 @@ func (s *Server) rotateTenant(w http.ResponseWriter, r *http.Request) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
 	if err != nil { http.Error(w, "hash", http.StatusInternalServerError); return }
 	res, err := s.db.ExecContext(r.Context(),
-		`UPDATE tenants SET token_hash=?, token_short=? WHERE id=? AND revoked=0`,
-		string(hash), shortToken(plain), id)
+		`UPDATE tenants SET token_hash=?, token_short=?, token_plain=? WHERE id=? AND revoked=0`,
+		string(hash), shortToken(plain), plain, id)
 	if err != nil { http.Error(w, "db", http.StatusInternalServerError); return }
 	if n, _ := res.RowsAffected(); n == 0 { http.Error(w, "not found", http.StatusNotFound); return }
 	if err := s.writeTokensFile(r.Context()); err != nil {
@@ -233,25 +236,17 @@ func (s *Server) rotateTenant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "token": plain})
 }
 
-// writeTokensFile regrava o arquivo lido pelo collector com os tokens válidos
-// e ativos no momento. Como bcrypt é one-way, mantemos uma tabela paralela em
-// memória (token_plain) — mas para simplicidade neste exemplo, voltamos a
-// armazenar os tokens em formato hashado e o tokens.yaml usa os hashes
-// invertidos. NA PRÁTICA: armazene o plaintext criptografado com KMS, ou
-// derive o token de forma determinística. Aqui, para PoC, mantemos os tokens
-// plaintext válidos em arquivo separado tokens_active.json com permissão 0600.
+// writeTokensFile regrava o arquivo lido pelo collector com os tokens plaintext
+// válidos e ativos no momento. O bearertokenauth espera uma lista YAML pura
+// (o file provider do collector substitui ${file:...} pelo conteúdo parseado).
+// O plaintext mora num volume privado lido só pelo collector (perm 0600);
+// a API expõe apenas o hash/short para auditoria. NA PRÁTICA: cifre o
+// plaintext em repouso com KMS.
 func (s *Server) writeTokensFile(ctx context.Context) error {
 	s.mu.Lock(); defer s.mu.Unlock()
 
-	// Ler todos os tokens ativos. Como bcrypt não permite recuperar o plaintext,
-	// guardamos em coluna adicional 'token_short' apenas para auditoria e usamos
-	// uma TABELA SEPARADA 'token_plain' para o que vai ao collector. Para o PoC,
-	// guardamos o plaintext na própria tabela em coluna não exposta na API.
-	// Aqui simplificamos: lemos token_short como sinal de presença e gravamos.
-	// A versão completa armazenaria o token cifrado com chave do servidor.
-
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT token_short FROM tenants
+		SELECT token_plain FROM tenants
 		WHERE revoked = 0 AND expires_at > ?
 	`, time.Now().UTC())
 	if err != nil { return err }
@@ -263,10 +258,12 @@ func (s *Server) writeTokensFile(ctx context.Context) error {
 		if err := rows.Scan(&t); err != nil { continue }
 		tokens = append(tokens, t)
 	}
-	if tokens == nil { tokens = []string{} }
+	// bearertokenauth recusa lista vazia; injeta o sentinela quando não há
+	// tokens ativos para que o collector continue de pé (sentinela é aleatório
+	// e nunca é entregue a ninguém).
+	if len(tokens) == 0 { tokens = []string{s.bootstrap} }
 
-	doc := map[string]any{"tokens": tokens}
-	buf, err := yaml.Marshal(doc)
+	buf, err := yaml.Marshal(tokens)
 	if err != nil { return err }
 
 	tmp := s.tokensFile + ".tmp"

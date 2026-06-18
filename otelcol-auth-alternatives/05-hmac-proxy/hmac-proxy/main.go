@@ -234,7 +234,9 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
-	var req struct{ TenantID string }
+	var req struct {
+		TenantID string `json:"tenant_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "bad json", 400); return }
 	if strings.TrimSpace(req.TenantID) == "" { http.Error(w, "tenant_id required", 400); return }
 	keyID := newID(8)

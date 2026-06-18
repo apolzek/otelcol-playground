@@ -201,7 +201,10 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) createClient(w http.ResponseWriter, r *http.Request) {
-	var req struct{ ClientID, TenantID string }
+	var req struct {
+		ClientID string `json:"client_id"`
+		TenantID string `json:"tenant_id"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil { http.Error(w, "bad json", 400); return }
 	if req.ClientID == "" || req.TenantID == "" { http.Error(w, "client_id and tenant_id required", 400); return }
 	secret := newSecret()

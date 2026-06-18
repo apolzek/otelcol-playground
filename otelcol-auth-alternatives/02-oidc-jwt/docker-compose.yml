@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.151.0
+    image: otel/opentelemetry-collector-contrib:0.154.0
     container_name: otelcol
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
@@ -30,7 +30,7 @@ services:
     restart: unless-stopped
     deploy:
       resources:
-        limits: { cpus: "2", memory: "1Gi" }
+        limits: { cpus: "2", memory: "1G" }
 
 volumes:
   oidc-data:

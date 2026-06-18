@@ -1,1 +1,1 @@
-# opentelemetry-collector-stuff
+# otelcol-playground

@@ -27,23 +27,9 @@ processors:
     limit_percentage: 80
     spike_limit_percentage: 25
 
-  # Enriquece todo span/metric/log com o tenant_id derivado do JWT
-  # (a extension expõe via auth.context — um processor custom poderia copiar
-  # para resource attributes; aqui usamos o transform processor com OTTL)
-  transform/tenant:
-    error_mode: ignore
-    trace_statements:
-      - context: resource
-        statements:
-          - set(attributes["tenant.id"], "from-jwt")  # placeholder; ver doc
-    metric_statements:
-      - context: resource
-        statements:
-          - set(attributes["tenant.id"], "from-jwt")
-    log_statements:
-      - context: resource
-        statements:
-          - set(attributes["tenant.id"], "from-jwt")
+  # NOTA: o claim tenant_id é validado pela extension oidc, mas propagá-lo para
+  # resource attributes exige um processor custom (OTTL não lê o auth context).
+  # Mantido fora do pipeline para não enganar — ver README.
 
   batch:
     send_batch_size: 8192
@@ -64,13 +50,13 @@ service:
   pipelines:
     traces:
       receivers:  [otlp]
-      processors: [memory_limiter, transform/tenant, batch]
+      processors: [memory_limiter, batch]
       exporters:  [debug]
     metrics:
       receivers:  [otlp]
-      processors: [memory_limiter, transform/tenant, batch]
+      processors: [memory_limiter, batch]
       exporters:  [debug]
     logs:
       receivers:  [otlp]
-      processors: [memory_limiter, transform/tenant, batch]
+      processors: [memory_limiter, batch]
       exporters:  [debug]

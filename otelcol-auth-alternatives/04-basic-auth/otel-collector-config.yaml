@@ -1,7 +1,7 @@
 extensions:
   basicauth:
     htpasswd:
-      file: /etc/otelcol/htpasswd
+      file: /etc/otelcol/auth/htpasswd
       # 'inline' ignorado quando 'file' está setado
 
   health_check: { endpoint: 0.0.0.0:13133 }
