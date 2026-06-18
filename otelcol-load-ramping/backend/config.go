@@ -96,6 +96,11 @@ func DefaultConfig() Config {
 	}
 }
 
+// maxWorkers caps the number of telemetrygen goroutines a single signal may
+// spawn. Without it, an over-large (or hostile) request could request an
+// unbounded worker count and exhaust host resources.
+const maxWorkers = 64
+
 // signal identifies one of the three telemetrygen subcommands.
 type signal string
 
@@ -127,6 +132,9 @@ func (c Config) args(s signal) []string {
 	workers := sc.Workers
 	if workers < 1 {
 		workers = 1
+	}
+	if workers > maxWorkers {
+		workers = maxWorkers
 	}
 
 	a := []string{
@@ -200,6 +208,9 @@ func (c Config) recordsPerSec(s signal) float64 {
 	workers := sc.Workers
 	if workers < 1 {
 		workers = 1
+	}
+	if workers > maxWorkers {
+		workers = maxWorkers
 	}
 	if sc.Rate <= 0 {
 		return -1 // unthrottled

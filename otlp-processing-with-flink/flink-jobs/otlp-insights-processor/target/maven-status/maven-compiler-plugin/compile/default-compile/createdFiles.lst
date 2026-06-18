@@ -1,9 +1,0 @@
-io/nochaos/flink/OtlpInsightsJob$LabeledCounter.class
-io/nochaos/flink/OtlpInsightsJob$InsightsCounters.class
-io/nochaos/flink/OtlpInsightsJob$TracesInsightsProcess.class
-io/nochaos/flink/OtlpInsightsJob.class
-io/nochaos/flink/OtlpInsightsJob$LogsInsightsProcess.class
-io/nochaos/flink/OtlpInsightsJob$ByteArrayDeserializationSchema.class
-io/nochaos/flink/OtlpInsightsJob$1.class
-io/nochaos/flink/OtlpInsightsJob$ByteArrayDeserializationSchema$1.class
-io/nochaos/flink/OtlpInsightsJob$MetricsInsightsProcess.class

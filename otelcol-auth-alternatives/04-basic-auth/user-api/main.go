@@ -214,6 +214,6 @@ func findPID(name string) int {
 		if err != nil { continue }
 		if strings.TrimSpace(string(b)) == name { return pid }
 	}
-	if err := exec.Command("pkill", "-HUP", name).Run(); err == nil { return -1 }
+	if err := exec.Command("pkill", "-HUP", "--", name).Run(); err == nil { return -1 }
 	return 0
 }

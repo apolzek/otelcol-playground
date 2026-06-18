@@ -1,6 +1,0 @@
-com/example/otlp/LogCounter.class
-com/example/otlp/TraceCounter.class
-com/example/otlp/MetricCounter$1.class
-com/example/otlp/OtlpCounterJob.class
-com/example/otlp/BytesDeserializer.class
-com/example/otlp/MetricCounter.class

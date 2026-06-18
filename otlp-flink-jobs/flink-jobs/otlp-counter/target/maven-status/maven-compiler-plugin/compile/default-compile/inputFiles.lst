@@ -1,5 +1,0 @@
-/build/src/main/java/com/example/otlp/BytesDeserializer.java
-/build/src/main/java/com/example/otlp/LogCounter.java
-/build/src/main/java/com/example/otlp/MetricCounter.java
-/build/src/main/java/com/example/otlp/OtlpCounterJob.java
-/build/src/main/java/com/example/otlp/TraceCounter.java

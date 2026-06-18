@@ -29,6 +29,24 @@ yarn-error.log*
 *.test
 *.out
 vendor/
+# compiled service binaries (output of `go build` in the package dir)
+otelcol-auth-alternatives/*/*/token-api
+otelcol-auth-alternatives/*/*/oidc-provider
+otelcol-auth-alternatives/*/*/ca-service
+otelcol-auth-alternatives/*/*/user-api
+otelcol-auth-alternatives/*/*/hmac-proxy
+otelcol-load-ramping/backend/backend
+
+# Java / Maven build output
+target/
+*.jar
+*.war
+*.ear
+*.class
+dependency-reduced-pom.xml
+maven-status/
+maven-archiver/
+.mvn/
 
 # IDE / editors
 .idea/

@@ -1,8 +1,0 @@
-io/nochaos/flink/OtlpTailSamplerJob$ByteArrayDeserializationSchema.class
-io/nochaos/flink/OtlpTailSamplerJob$1.class
-io/nochaos/flink/OtlpTailSamplerJob$ByteArrayDeserializationSchema$1.class
-io/nochaos/flink/OtlpTailSamplerJob$TailSamplerProcess.class
-io/nochaos/flink/OtlpTailSamplerJob$LabeledCounter.class
-io/nochaos/flink/OtlpTailSamplerJob.class
-io/nochaos/flink/OtlpTailSamplerJob$SpanExtractProcess.class
-io/nochaos/flink/OtlpTailSamplerJob$SpanFact.class

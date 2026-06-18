@@ -303,7 +303,9 @@ func newToken() string {
 }
 func shortToken(t string) string {
 	h := sha256.Sum256([]byte(t))
-	return t[:9] + "…" + hex.EncodeToString(h[:4])
+	n := 9
+	if len(t) < n { n = len(t) }
+	return t[:n] + "…" + hex.EncodeToString(h[:4])
 }
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("content-type", "application/json")
@@ -343,6 +345,6 @@ func findPID(name string) int {
 		if strings.TrimSpace(string(b)) == name { return pid }
 	}
 	// fallback: pkill -HUP via shell
-	if err := exec.Command("pkill", "-HUP", name).Run(); err == nil { return -1 }
+	if err := exec.Command("pkill", "-HUP", "--", name).Run(); err == nil { return -1 }
 	return 0
 }

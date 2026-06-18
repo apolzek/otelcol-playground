@@ -1,6 +1,0 @@
-io/nochaos/flink/OtlpSpanRedMetricsJob$1.class
-io/nochaos/flink/OtlpSpanRedMetricsJob$ByteArrayDeserializationSchema$1.class
-io/nochaos/flink/OtlpSpanRedMetricsJob$SpanRedMetricsProcess.class
-io/nochaos/flink/OtlpSpanRedMetricsJob$LabeledCounter.class
-io/nochaos/flink/OtlpSpanRedMetricsJob.class
-io/nochaos/flink/OtlpSpanRedMetricsJob$ByteArrayDeserializationSchema.class
