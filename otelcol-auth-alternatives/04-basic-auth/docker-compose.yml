@@ -1,0 +1,40 @@
+services:
+  user-api:
+    build: ./user-api
+    container_name: user-api
+    environment:
+      ADMIN_KEY:    ${ADMIN_KEY:-change-me-admin-key}
+      LISTEN:       ":8081"
+      HTPASSWD:     /etc/otelcol/auth/htpasswd
+      DB_PATH:      /data/users.db
+      COLLECTOR_BIN: otelcol-contrib
+    volumes:
+      - htpasswd-vol:/etc/otelcol/auth
+      - api-data:/data
+    ports: ["8081:8081"]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.154.0
+    container_name: otelcol
+    # mesmo UID da user-api → lê o htpasswd (0600) do volume compartilhado
+    user: "65532:65532"
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - htpasswd-vol:/etc/otelcol/auth:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8888:8888"
+    pid: "service:user-api"
+    depends_on: [user-api]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1G" }
+
+volumes:
+  htpasswd-vol:
+  api-data:

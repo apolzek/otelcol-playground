@@ -1,0 +1,31 @@
+services:
+  ca-service:
+    build: ./ca-service
+    container_name: ca-service
+    environment:
+      ADMIN_KEY: ${ADMIN_KEY:-change-me-admin-key}
+      CA_CERT:   /etc/ca/ca.crt
+      CA_KEY:    /etc/ca/ca.key
+      LISTEN:    ":9100"
+      CERT_TTL_HOURS: "24"
+    volumes:
+      - ./tls:/etc/ca:ro
+    ports: ["9100:9100"]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.154.0
+    container_name: otelcol
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+      - ./tls:/etc/otelcol/tls:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8888:8888"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1G" }

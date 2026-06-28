@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Otelcol Load Ramping · OTLP load generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Indie+Flower&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Otelcol Load Ramping</h1>
+    <div class="statusbar">
+      <span class="stat" id="st-backend"><i></i><span>Backend</span></span>
+      <span class="stat" id="st-endpoint"><i></i><span>Collector endpoint</span></span>
+      <span class="stat" id="st-metrics"><i></i><span>Metrics endpoint</span></span>
+    </div>
+  </header>
+
+  <section class="target card">
+    <h2>Target collector</h2>
+    <div class="row">
+      <label>Endpoint (OTLP)
+        <input id="endpoint" type="text" value="otelcol:4317" />
+      </label>
+      <label>Metrics endpoint
+        <input id="metricsEndpoint" type="text" value="otelcol:8888" />
+      </label>
+      <label>Service name
+        <input id="serviceName" type="text" value="telemetrygen" />
+      </label>
+      <label class="check">
+        <input id="insecure" type="checkbox" checked /> insecure (no TLS)
+      </label>
+      <label class="check">
+        <input id="http" type="checkbox" /> use HTTP (instead of gRPC)
+      </label>
+    </div>
+    <div class="actions">
+      <button id="stopAll" class="danger">■ Stop all</button>
+      <span class="hint">Changes apply live (hot reload) — telemetrygen restarts the affected signal only.</span>
+    </div>
+  </section>
+
+  <section class="totals card">
+    <div class="total">
+      <span class="total-label">Configured (target) total</span>
+      <span id="totalConfigured" class="total-value">0</span>
+      <span class="unit">records/s</span>
+    </div>
+    <div class="total">
+      <span class="total-label">Collector received (measured)</span>
+      <span id="totalReceived" class="total-value accent">0</span>
+      <span class="unit">records/s</span>
+      <span id="receivedStatus" class="hint"></span>
+    </div>
+  </section>
+
+  <section class="signals">
+    <!-- signal cards injected by app.js -->
+  </section>
+
+  <section class="card logs">
+    <h2>telemetrygen output</h2>
+    <pre id="logs"></pre>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

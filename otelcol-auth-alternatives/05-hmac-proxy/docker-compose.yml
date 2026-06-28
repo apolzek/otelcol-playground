@@ -1,0 +1,38 @@
+services:
+  hmac-proxy:
+    build: ./hmac-proxy
+    container_name: hmac-proxy
+    environment:
+      ADMIN_KEY:    ${ADMIN_KEY:-change-me-admin-key}
+      LISTEN_PUBLIC: ":4318"          # endpoint público OTLP/HTTP
+      LISTEN_ADMIN:  ":8082"          # endpoint privado admin
+      UPSTREAM:      "http://127.0.0.1:14318"
+      DB_PATH:       /data/keys.db
+      SKEW_SECONDS:  "300"
+      NONCE_TTL_SECONDS: "600"
+    volumes:
+      - api-data:/data
+    network_mode: "service:otel-collector"
+    depends_on: [otel-collector]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.154.0
+    container_name: otelcol
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    # OTLP escuta em 127.0.0.1:14318 (HTTP) e 127.0.0.1:4317 (gRPC). Ajuste a
+    # config para usar 14318 se quiser que o proxy ocupe a porta padrão 4318
+    # voltada ao público.
+    ports:
+      - "4318:4318"     # exposto pelo proxy via network_mode
+      - "8082:8082"     # exposto pelo proxy
+      - "13133:13133"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: "1G" }
+
+volumes:
+  api-data:

@@ -1,0 +1,53 @@
+# Collector escuta SOMENTE em loopback. Quem fala com ele é o hmac-proxy
+# rodando no mesmo pod / container network namespace.
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:14317     # loopback only — proxy ocupa 4317 público
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 127.0.0.1:14318     # loopback only — proxy ocupa 4318 público
+        cors: { allowed_origins: [] }
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # O proxy injeta X-Tenant-Id ao encaminhar; queremos isso como resource attribute.
+  # 'attributes' processor não lê headers diretamente — usar 'transform' ou
+  # processor 'resource' alimentado pelo proxy via campo OTLP. Para simplificar
+  # neste PoC, o proxy injeta no payload via 'X-Tenant-Id' header e um receiver
+  # custom (ou batch processor + transformação OTTL via auth context) propaga.
+  batch:
+    send_batch_size: 8192
+    timeout: 5s
+
+exporters:
+  debug: { verbosity: basic }
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - pull: { exporter: { prometheus: { host: 127.0.0.1, port: 8888 } } }
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

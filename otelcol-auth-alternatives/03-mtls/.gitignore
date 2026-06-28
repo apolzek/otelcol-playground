@@ -1,0 +1,3 @@
+# artefatos gerados pelo gen-certs.sh e pelo fluxo de assinatura — nunca versionar
+tls/
+client.*
